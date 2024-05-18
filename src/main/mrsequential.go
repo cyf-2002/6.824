@@ -68,6 +68,7 @@ func main() {
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1
+		// 处理所有相同的key
 		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
 			j++
 		}
@@ -75,6 +76,7 @@ func main() {
 		for k := i; k < j; k++ {
 			values = append(values, intermediate[k].Value)
 		}
+		// 既然返回的是 len(values) = j - i, 是否不需要 values？
 		output := reducef(intermediate[i].Key, values)
 
 		// this is the correct format for each line of Reduce output.
