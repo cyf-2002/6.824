@@ -109,7 +109,18 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 func (c *Coordinator) makeMapTasks(files []string) {
 	for _, file := range files {
 		id := c.generateTaskID()
+		task := Task{
+			TaskType:  MapTask,
+			TaskId:    id,
+			ReduceNum: c.reduceNum,
+			FileName:  []string{file},
+		}
 
+		// 任务初始状态
+		taskInfo := &TaskInfo{state: Waiting}
+		// 将 task 状态保存在 master 中
+		c.TaskInfoMap[task.TaskId] = taskInfo
+		c.MapTaskChan <- &task
 	}
 }
 
