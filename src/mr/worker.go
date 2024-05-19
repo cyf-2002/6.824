@@ -51,6 +51,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			callDone(&task)
 		case ReduceTask:
 			doReduceTask(&task, reducef)
+			callDone(&task)
 		case WaittingTask:
 			// 等待一段时间再请求
 			time.Sleep(5 * time.Second)
@@ -109,11 +110,7 @@ func doReduceTask(task *Task, reducef func(string, []string) string) {
 
 }
 
-//
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//
+// 调用 Coordinator.GetTask 获取任务
 func CallGetTask() Task {
 
 	// declare an argument structure.
@@ -131,15 +128,15 @@ func CallGetTask() Task {
 	return reply
 }
 
-func callDone(t *Task) Task {
+func callDone(t *Task) {
 	reply := Task{}
 	// 通知 task 已完成，传入参数 t
 	ok := call("Coordinator.MarkFinished", &t, &reply)
 
 	if !ok {
-		fmt.Printf("callDone failed!\n")
+		fmt.Printf("%v callDone failed!\n", t.TaskId)
 	}
-	return reply
+	fmt.Printf("task %v done\n", t.TaskId)
 }
 
 //
