@@ -203,11 +203,12 @@ wait -n
 
 # a process has exited. this means that the output should be finalized
 # otherwise, either a worker or the coordinator exited early
+echo '---' a process has exited
 sort mr-out* | grep . > mr-wc-all-initial
 
 # wait for remaining workers and coordinator to exit.
 wait
-
+echo '---' all process has exited
 # compare initial and final outputs
 sort mr-out* | grep . > mr-wc-all-final
 if cmp mr-wc-all-final mr-wc-all-initial

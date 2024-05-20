@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -57,13 +58,12 @@ func Worker(mapf func(string, string) []KeyValue,
 			time.Sleep(5 * time.Second)
 			continue
 		case ExitTask:
+			time.Sleep(time.Second)
 			fmt.Println("exit task")
 			return
 		}
 
 	}
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
 
 }
 
@@ -92,22 +92,77 @@ func doMapTask(task *Task, mapf func(string, string) []KeyValue) {
 
 	for i := 0; i < nReduce; i++ {
 		// 临时文件
-		oname := "mr-tmp-" + strconv.Itoa(task.TaskId) + "-" + strconv.Itoa(i)
-		ofile, _ := os.Create(oname)
+		tmpfile, err := ioutil.TempFile("", "mr-tmp-*")
+		if err != nil {
+			log.Fatalf("cannot create temp file: %v", err)
+		}
+		defer os.Remove(tmpfile.Name())
 
-		enc := json.NewEncoder(ofile)
+		fn := fmt.Sprintf("mr-" + strconv.Itoa(task.TaskId) + "-" + strconv.Itoa(i))
+
+		// 将 kv 键值对 存储在 JSON 文件中
+		enc := json.NewEncoder(tmpfile)
 		for _, kv := range kvHash[i] {
 			err := enc.Encode(&kv)
 			if err != nil {
 				log.Fatalf("encode error: %v", err)
 			}
 		}
-		ofile.Close()
+		tmpfile.Close()
+
+		// 原子操作重命名
+		os.Rename(tmpfile.Name(), fn)
 	}
 }
 
 func doReduceTask(task *Task, reducef func(string, []string) string) {
+	// 使用临时文件预防崩溃
+	tmpfile, err := ioutil.TempFile("", "mr-tmp-*")
+	if err != nil {
+		log.Fatalf("cannot create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
 
+	// 从 JSON 文件中读取 kv 键值对
+	var intermediate []KeyValue
+	for _, fileName := range task.FileName {
+		file, _ := os.Open(fileName)
+		dec := json.NewDecoder(file)
+		for {
+			var kv KeyValue
+			if err := dec.Decode(&kv); err != nil {
+				break
+			}
+			intermediate = append(intermediate, kv)
+		}
+		file.Close()
+	}
+	sort.Sort(ByKey(intermediate))
+
+	// 调用 reducef 存储到临时文件
+	i := 0
+	for i < len(intermediate) {
+		j := i + 1
+		// 处理所有相同的key
+		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value)
+		}
+		// 既然返回的是 len(values) = j - i, 是否不需要 values？
+		output := reducef(intermediate[i].Key, values)
+
+		// this is the correct format for each line of Reduce output.
+		fmt.Fprintf(tmpfile, "%v %v\n", intermediate[i].Key, output)
+
+		i = j
+	}
+
+	// 使用原子操作重命名
+	fn := fmt.Sprintf("mr-out-%v", task.ReduceNum)
+	os.Rename(tmpfile.Name(), fn)
 }
 
 // 调用 Coordinator.GetTask 获取任务
@@ -124,7 +179,7 @@ func CallGetTask() Task {
 	if !ok {
 		log.Fatal("Coordinator.GetTask failed")
 	}
-	fmt.Println(reply)
+	fmt.Printf("GetTask %v\n", reply)
 	return reply
 }
 

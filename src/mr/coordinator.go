@@ -3,6 +3,8 @@ package mr
 import (
 	"fmt"
 	"log"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -105,13 +107,14 @@ func (c *Coordinator) GetTask(args *TaskRequestArgs, reply *Task) error {
 	return nil
 }
 
+// worker 完成任务后调用
 func (c *Coordinator) MarkFinished(t *Task, reply *Task) error {
 	mu.Lock()
 	defer mu.Unlock()
 
 	info, ok := c.TaskMetaHolder.TaskInfoMap[t.TaskId]
 	if ok && info.state == Working {
-		info.state = Waiting
+		info.state = Done
 	} else {
 		fmt.Printf("%v %v is already finished", t.TaskType, t.TaskId)
 	}
@@ -140,8 +143,13 @@ func (c *Coordinator) server() {
 //
 func (c *Coordinator) Done() bool {
 	ret := false
+	mu.Lock()
+	defer mu.Unlock()
 
-	// Your code here.
+	if c.Phase == AllDone {
+		fmt.Println("entire job finished!")
+		ret = true
+	}
 
 	return ret
 }
@@ -196,7 +204,37 @@ func (c *Coordinator) makeMapTasks(files []string) {
 }
 
 // 初始化 reduce task
-func (c *Coordinator) makeReduceTasks() {}
+func (c *Coordinator) makeReduceTasks() {
+	for i := 0; i < c.reduceNum; i++ {
+		id := c.generateTaskID()
+		task := Task{
+			TaskType:  ReduceTask,
+			TaskId:    id,
+			ReduceNum: i, // 在 reduce 任务中存储 i???
+			FileName:  selectReduceFile(i),
+		}
+
+		// 任务初始状态
+		taskInfo := TaskInfo{
+			state: Waiting,
+			ptr:   &task,
+		}
+		// 将 task 状态保存在 master 中
+		c.TaskMetaHolder.putTask(&taskInfo)
+		fmt.Println("making a reduce task :", &task)
+		c.ReduceTaskChan <- &task
+	}
+	fmt.Println("done making reduce tasks")
+}
+
+// 选择 reduce 的文件
+func selectReduceFile(id int) []string {
+	files, err := filepath.Glob("mr-*-" + strconv.Itoa(id))
+	if err != nil {
+		fmt.Println("selectReduceFile: pattern unmatched")
+	}
+	return files
+}
 
 // 返回 c.nextTaskID，然后自增
 func (c *Coordinator) generateTaskID() int {
